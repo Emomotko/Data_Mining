@@ -1,0 +1,46 @@
+\documentclass{article}
+
+\usepackage[polish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[cp1250]{inputenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{polski}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{caption}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+\begin{enumerate}
+  \item \textbf{V1} - Shot Length (SL)\\
+  Definiowana jako d³ugoœæ ujêcia (czyli liczba klatek). Jak siê okazuje shoty reklamowe s¹ krótsze w porównaniu do innych.
+  \item V2, V3 - Motion Distrubution (MD)\\
+  WskaŸnik reprezentuj¹cy dynamiczn¹ naturê shotów reklamowych (ruch, "przep³yw" obrazu). V2 stanowi œredni¹ wartoœæ wskaŸnika, natomiast V3 jego wariancjê.
+  \item V4, V5 - Frame Difference Distribution (FFD)\\
+  WskaŸnik reprezentuj¹cy dynamiczn¹ naturê shotów reklamowych (poziom zmiany pikseli w kolejnych klatkach). V4 stanowi œredni¹ wartoœæ wskaŸnika, natomiast V5 jego wariancjê.
+  \item V6, V7 - Short Time Energy\\
+  WskaŸnik zdefiniowany jako suma kwadratów wartoœci sygna³u podczas ka¿dej klatki w shocie. Reklamy zazwyczaj charakteryzuj¹ siê wy¿sz¹ amplitud¹ dŸwiêku. Odpowiednio V6 jest to œrednia wartoœæ wskaŸnika we wszystkich klatkach, natomiast V7 jest to wariancja.
+  \item V8, V9 - Zero Crossing Rate (ZCR)\\
+  WskaŸnik który mierzy jak gwa³townie zmieni¹ siê sygna³ w shocie oraz dostarcza informacji o obecnoœci muzyki w shocie. V8 - wartoœæ œrednia, V9 - wariancja.
+  \item V10, V11 - Spectral Centroid (SC)\\
+  WskaŸnik mówi¹cy o obecnoœci wy¿szych czêstotliwoœci. V10 - wartoœæ œrednia, V11 - wariancja.
+  \item V12, V13 - Spectral Roll off Frequency (SRF)\\
+  WskaŸnik, który informuje o obecnoœci muzyki i zwyk³ej mowy oraz odró¿nia je od siebie. V12 - wartoœæ œrednia, V13 - wariancja.
+  \item V14, V15 - Spectral Flux (SF)\\
+  WskaŸnik mierz¹cy zmiany w zakresie fal dŸwiekowych. V14 - wartoœæ œrednia, V15 - wariancja.
+  \item V16, V17 - Fundamental Frequency (FF)\\
+  WskaŸnik, którego zadaniem jest odró¿nienie reklam od spotów niereklamowych przy za³o¿eniu, ¿e reklamy s¹ zdominowane przez muzykê, natomiast w pozosta³ych shotach przewa¿a mowa ludzka. V16 - wartoœæ œrednia, V17 - wariancja.
+  \item V18 - V58 - Motion Distribution (MD, koszyki)\\
+  Wskazuj¹ na obecnoœæ "przep³ywu obrazu". Shot zosta³ podzielony na 40 czêœci i w ka¿dym zaobserwowano pewn¹ wartoœæ.
+  \item V58 - V91 - Frame Difference Distribution (FFD, koszyki)\\
+  Reprezentuje dynamiczn¹ naturê shotów. 32 koszyki reprezentuj¹ zbiory kolorów (od 0 do 255).
+  \item V92 - V122 - Text Area Distribution\\
+  Reprezentuje rozk³ad tekstu w shocie. Ka¿dy kadr podzielono na 15 czêœci i w ka¿dym badano frakcjê powierzchni zajmowanej przez tekst. Pierwsze 15 wartoœci s¹ to wartoœci œrednie, natomiast pozosta³e 15 s¹ to wariancje.
+  \item V123 - V4123 - Bag of Audio Words\\
+  Dla ka¿dej klatki wyznaczono 15 ró¿nych rodzajów wskaŸników na podstawie których stworzono 4000 klastrów. Klastry s¹ interpretowane jako "s³owa". Nastêpnie na podstawie wartoœci przyporz¹dkowanej do ka¿dego s³owa mo¿em szacowaæ ich wp³yw na shot.
+  \item V4124 - V4125 - Edge Change Ratio (ECR)\\
+  WskaŸnik wyznacza dynamiczn¹ naturê t³a shotu, a dok³adniej opisuje ruch w granicach obiektów. WskaŸnik zazwyczaj wy¿szy dla shotów reklamowych. V4124 - wartoœæ œrednia, V4125 - wariancja.
+\end{enumerate}
+
+\end{document}
