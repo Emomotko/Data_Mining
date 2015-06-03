@@ -1,6 +1,6 @@
 load("Data//cnn.rda")
 
-##### V3
+##### V7
 plot(density(cnn[cnn$Class == 0, 3]), col="grey", main = "V3", , xlab = "")
 legend("topright", col = c("red", "grey"), 
        legend = c("Reklama", "TV News"), lty = 1)
