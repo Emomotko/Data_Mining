@@ -1,0 +1,12 @@
+\documentclass{article}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+Dokonuj¹c konstrukcji klasyfikatorów przyjê³yœmy, ¿e bardziej interesuje nas identyfikacja reklamy. Dane zosta³y zgromadzone g³ownie na potrzeby firm, których produkty by³y promowane w telewizji. Takie firmy mog¹ byæ zainteresowane zarówno kontrol¹ nadawania reklam dotycz¹cych ich wyrobów, jak te¿ badaniem posuniêæ konkurencji.\\\\
+W celu wyboru najlepszej metody klasyfikacji przeanalizowa³yœmy dok³adnie 10 ró¿nych klasyfikatorów i dokona³yœmy ich oceny na podstawie b³êdów klasyfikacji i innych wskaŸników, opisuj¹cych stopieñ dopasowania do danych i efekt predykcyjny.  Co siê okazuje? Najlepszym klasyfikatorem s¹ lasy losowe.  Cechuje go zarówno ma³y b³¹d predykcji jak i wysoka precyzja.  Nie jest to wielkim zaskoczeniem, gdy¿ ten klasyfikator jest oparty na tzw. komitetach drzew a i nasz rezultat jest uœredniony. Modele oparte na ztw. \emph{collective wisdom} cechuj¹ siê wysok¹ efektywnoœci¹.\\\\
+Klasyfikatorem, który zdecydowanie nie sprawdza w klasyfikacji reklamy jest perceptron.  Procent poprawnych klasyfikacji jest tylko na poziomie 70\%, natomiast wykres krzywej CAP sugeruje nam, ¿e ten klasyfikator jest niewiele lepszy od modelu losowego. Równie¿ niewielka wartoœæ wskaŸnika AUC (0.6) mówi nam, ¿e nie mamy do czynienia ze stosunkowo s³abym klasyfikatorem.
+
+
+
+\end{document}
