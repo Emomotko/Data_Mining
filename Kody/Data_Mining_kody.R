@@ -32,6 +32,8 @@ library(klaR)
 ### FUNKCJE POMOCNICZE
 ########################################################
 
+procent <- function(df) sum(diag(df))/sum(df)
+
 dokladnosc <- function(df) sum(diag(df))/sum(df)
 
 czulosc <- function(df) df[2,2]/sum(df[2,])
@@ -651,4 +653,26 @@ predykcja_p_test <- (sign(model_perceptron[length(model_perceptron)] + as.matrix
 (czulosc_p_test <- czulosc(tabela_p_test))
 (specyficznosc_p_test <- specyficznosc(tabela_p_test))
 (precyzja_p_test <- precyzja(tabela_p_test))
+
+Labels = ifelse(Test$Class==1,1,0)
+P1 <- prediction(predykcja_p_test, Labels)
+
+#CAP
+CAP_p <- performance(P1, "tpr", "rpp")
+
+plot(CAP_p, main="Krzywa CAP - PERCEPTRON",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#ROC
+ROC_p <- performance(P1, "tpr", "fpr")
+
+plot(ROC_p, main="Krzywa ROC - PERCEPTRON",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#AUC
+AUC_p <- performance(P1, "auc")@y.values[[1]]
+
+#LIFT
+LIFT_p <- performance(P1, measure="lift", x.measure="rpp")
+plot(LIFT_p, main="Krzywa LIFT - PERCEPTRON",col=2, lwd=2)
 
