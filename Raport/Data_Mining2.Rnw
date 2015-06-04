@@ -267,7 +267,7 @@ AUC_QDA <- AUC_qda
 error_QDA <- 1-k_qda$procent
 @
 
-Dopasujmy model perceptronu do danych ze zbioru treningowego:
+Dopasujmy model QDA do danych ze zbioru treningowego:
 <<eval=FALSE>>=
 qda <- qda(Class~., data=Train)
 @
@@ -333,6 +333,12 @@ dokladnosc_perceptron <- procent_p_test
 czulosc_perceptron <- czulosc_p_test
 precyzja_perceptron <- precyzja_p_test
 
+ROC_P <- ROC_p
+CAP_P <- CAP_p
+LIFT_P <- LIFT_p
+
+AUC_P <- AUC_p
+
 error_perceptron <- 1-procent_p_test
 @
 
@@ -365,6 +371,29 @@ Inne wskaźniki opisujące dopasowanie modelu do danych (dokładność, czułoś
 dokladnosc_perceptron
 czulosc_perceptron
 precyzja_perceptron
+@
+
+Przyjrzyjmy sę jeszcze odpowiednim wykresom (ROC, CAP, LIFT):
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_P, main="Krzywa ROC - PERCEPTRON",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_P, main="Krzywa CAP - LDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_P, main="Krzywa LIFT - LDA",col=2,lwd=2)
+
+@
+
+Wartość AUC również ocenia dopasowanie modelu do danych:
+<<>>=
+AUC_P
 @
 
 Niestety z powodów technicznych i ograniczenia sprzętu nie byłyśmy w stanie przeprowadzić kroswalidacji 10-krotnej dla perceptronu.
