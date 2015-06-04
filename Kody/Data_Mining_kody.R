@@ -546,7 +546,7 @@ y <- Test[,1]
 
 predykcja_reg1_test <- predict(model_reg_train_min, newx=x2, type="response")
 predykcja_reg1_test_klasy <- ifelse(predykcja_reg1_test>=0.5, 1, 0)
-(tabela_reg1_test <- table(y,predykcja_reg1_test_klasy))
+(tabela_reg1_test <- table(y,predykcja_reg1_test_klasy,dnn=c("Observed Class", "Predicted Class")))
 (procent_reg1_test <- procent(tabela_reg1_test))
 (czulosc_reg1_test <- czulosc(tabela_reg1_test))
 (specyficznosc_reg1_test <- specyficznosc(tabela_reg1_test))
@@ -601,7 +601,7 @@ rpart.plot(model_tree_train)
 
 #predykcja
 predykcja_tree_test <- predict(model_tree_train, newdata = Test, type="class")
-(tabela_tree_test <- table(Test[,1], predykcja_tree_test))
+(tabela_tree_test <- table(Test[,1], predykcja_tree_test,dnn=c("Observed Class", "Predicted Class")))
 (procent_tree_test <- procent(tabela_tree_test))
 (czulosc_tree_test <- czulosc(tabela_tree_test))
 (specyficznosc_tree_test <- specyficznosc(tabela_tree_test))
@@ -648,7 +648,7 @@ nowyx <- Test[,-1]
 
 #predykcja
 predykcja_p_test <- (sign(model_perceptron[length(model_perceptron)] + as.matrix(nowyx)%*%model_perceptron[-length(model_perceptron)])+1)/2
-(tabela_p_test<- table(Test[,1], predykcja_p_test))
+(tabela_p_test<- table(Test[,1], predykcja_p_test,dnn=c("Observed Class", "Predicted Class")))
 (procent_p_test <- procent(tabela_p_test))
 (czulosc_p_test <- czulosc(tabela_p_test))
 (specyficznosc_p_test <- specyficznosc(tabela_p_test))
