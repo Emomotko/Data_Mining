@@ -1,0 +1,1478 @@
+\documentclass{article}
+\usepackage[a4paper,margin=1.5cm,footskip=4cm]{geometry}
+
+%\usepackage[pdftex]{graphicx}
+\usepackage[polish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8x]{inputenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{polski}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{caption}
+
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+
+
+\input{./title.tex}
+\tableofcontents
+
+
+\newpage
+
+<<funkcje_pom, echo=FALSE>>=
+dokladnosc <- function(df) sum(diag(df))/sum(df)
+
+czulosc <- function(df) df[2,2]/sum(df[2,])
+
+specyficznosc <- function(df) df[1,1]/sum(df[1,])
+
+precyzja <- function(df) df[2,2]/sum(df[,2])
+
+auc <- function(Pred){
+  perf_AUC <- performance(Pred, "auc")
+  unlist(slot(perf_AUC, "y.values"))
+}
+@
+
+
+% Pakiety
+
+<<pakiety, echo=FALSE, message=FALSE, warning=FALSE>>=
+library(e1071)
+library(rpart)
+library(ROCR)
+library(class)
+library(ipred)
+library(randomForest)
+library(klaR)
+library(rpart.plot)
+library(glmnet)
+library(xtable)
+@
+
+
+\section*{Cel projektu}
+
+\noindent Celem naszego projektu jest analiza danych związanych z przemysłem telewizyjnym, a mianowicie zautomatyzowanie procesu identyfikacji bloków reklamowych podczas trwania programu. Nasze dane składały się z jednej zmiennej objaśnianej przyjmującej wartości~-1 (nie-reklama) i 1 (reklama) oraz 4125 predyktorów, które tak naprawdę były odpowiednimi charakterystykami dźwiękowymi i wizualnymi. Aby było łatwiej dokonać nam analizy wartość zmiennej objaśniającej -1 zmieniłyśmy na 0.
+
+
+\section*{Opis danych}
+
+Szczegółowe znaczenie zmiennych objaśniających jest przedstawione poniżej:
+\begin{itemize}
+  \item \textbf{V1 - Shot Length (SL)}\\
+  Definiowana jako długość ujęcia (czyli liczba klatek). Jak się okazuje shoty (ujęcia) reklamowe są krótsze w porównaniu do innych.
+  \item \textbf{V2, V3 - Motion Distrubution (MD)}\\
+  Wskaźnik reprezentujący dynamiczną naturę shotów reklamowych (ruch, \"przepływ\" obrazu). Zmienna V2 stanowi średnią wartość wskaźnika, natomiast zmienna V3 jego wariancję.
+  \item \textbf{V4, V5 - Frame Difference Distribution (FFD)}\\
+  Wskaźnik reprezentujący dynamiczną naturę shotów reklamowych (poziom zmiany pikseli w kolejnych klatkach). V4 stanowi średnią wartość wskaźnika, natomiast V5 jego wariancję.
+  \item \textbf{V6, V7 - Short Time Energy}\\
+  Wskaźnik zdefiniowany jako suma kwadratów wartości sygnału podczas każdej klatki w shocie. Reklamy zazwyczaj charakteryzują się wyższą amplitudą dźwięku. Odpowiednio V6 jest to średnia wartość wskaźnika we wszystkich klatkach, natomiast V7 jest to wariancja.
+  \item \textbf{V8, V9 - Zero Crossing Rate (ZCR)}\\
+  Wskaźnik który mierzy jak gwałtownie zmienią się sygnał w shocie oraz dostarcza informacji o obecności muzyki w shocie. V8 - wartość średnia, V9 - wariancja.
+  \item \textbf{V10, V11 - Spectral Centroid (SC)}\\
+  Wskaźnik mówiący o obecności wyższych częstotliwości. V10 - wartość średnia, V11 - wariancja.
+  \item \textbf{V12, V13 - Spectral Roll off Frequency (SRF)}\\
+  Wskaźnik, który informuje o obecności muzyki i zwykłej mowy oraz odróżnia je od siebie. V12 - wartość średnia, V13 - wariancja.
+  \item \textbf{V14, V15 - Spectral Flux (SF)}\\
+  Wskaźnik mierzący zmiany w zakresie fal dźwiekowych. V14 - wartość średnia, V15 - wariancja.
+  \item \textbf{V16, V17 - Fundamental Frequency (FF)}\\
+  Wskaźnik, którego zadaniem jest odróżnienie reklam od spotów niereklamowych przy założeniu, że reklamy są zdominowane przez muzykę, natomiast w pozostałych shotach przeważa mowa ludzka. V16 - wartość średnia, V17 - wariancja.
+  \item \textbf{V18 - V58 - Motion Distribution (MD, koszyki)}\\
+  Wskazują na obecność "przepływu obrazu". Shot został podzielony na 40 części i w każdym zaobserwowano pewną wartość.
+  \item \textbf{V58 - V91 - Frame Difference Distribution (FFD, koszyki)}\\
+  Reprezentuje dynamiczną naturę shotów. 32 koszyki reprezentują zbiory kolorów (od 0 do 255).
+  \item \textbf{V92 - V122 - Text Area Distribution}\\
+  Reprezentuje rozkład tekstu w shocie. Każdy kadr podzielono na 15 części i w każdym badano frakcję powierzchni zajmowanej przez tekst. Pierwsze 15 wartości są to wartości średnie, natomiast pozostałe 15 są to wariancje.
+  \item \textbf{V123 - V4123 - Bag of Audio Words}\\
+  Dla każdej klatki wyznaczono 15 różnych rodzajów wskaźników na podstawie których stworzono 4000 klastrów. Klastry są interpretowane jako \"słowa\". Następnie na podstawie wartości przyporządkowanej do każdego słowa możem szacować ich wpływ na shot.
+  \item \textbf{V4124 - V4125 - Edge Change Ratio (ECR)}\\
+  Wskaźnik wyznacza dynamiczną naturę tła shotu, a dokładniej opisuje ruch w granicach obiektów. Wskaźnik zazwyczaj wyższy dla shotów reklamowych. V4124 - wartość średnia, V4125 - wariancja.
+\end{itemize}
+
+\section{Wstępna analiza danych}
+
+\noindent Zbiór danych \textbf{CNN} zawierał 4125 zmiennych, jednakże większość wartości była równa zeru. Dlatego wszystkie zerowe kolumny usunęłyśmy, wówczas zbiór predyktorów zredukował się do 229 zmiennych. \\
+
+\noindent Kolejną selekcję zmiennych przeprowadziłyśmy na podstawie \emph{współczynnika korelacji Pearsona}. Zbiór zmiennych objaśniających pomniejszyłyśmy o zmienne, dla których wartość bezwzględna podanego współczynnika była większa niż 0.95 (wyrzucałyśmy jedną zmienną z pary, dla której otrzymałyśmy taką wartość współczynnika). W tym kroku zbiór predyktorów zredukował się o kolejne 22 zmienne. Fragment macierzy korelacji został przedstawiony poniżej:
+
+<<cor, echo=FALSE, cache=TRUE>>=
+#load("Raport//Data//cnn.rda")
+load("CNN.rda")
+kor <- cor(CNN[,-1])
+korelacja <- kor[1:5,1:5]
+@
+
+<<>>=
+korelacja
+@
+
+\noindent Po dokonaniu selekcji otrzymałyśmy 207 zmiennych objaśniających, jednak ich ilość nadal była zbyt duża. Postanowiłyśmy zatem skorzystać z tzw. \emph{metody filtrów}, aby ocenić, które zmienne są istotne. W tym celu stworzyłyśmy model logistyczny, w którym zmienną objaśnianą uzależniłyśmy tylko od stałej. Następnie dla każdej z pozostałych zmiennych zbudowałyśmy taki sam model (zmienna objaśniana zależna od konkretnego predyktora). Kolejnym krokiem było wyznaczenie dewiancji modelu ze zmienną od modelu ze stałą i uszeregowanie zmiennych ze względu na wartość dewiancji (malejąco). Po tak przeprowadzonej selekcji wybrałysmy 38 zmiennych: V1, V7, V8, V10, V11, V12, V15, V16, V59, V90, V91, V99, V100, V101, V104, V105, V106, V114, V127, V129, V142, V156   ,V168, V176, V185, V236, V269, V407, V572, V580, V601, V726, V762, V792, V924, V959,  V1002, V1016.\\
+
+\noindent Po dokonaniu selekcji zmiennych przyjrzyjmy się teraz naszym danym. Okazuje się, że mamy do czynienia z 8134 ujęciami z fragmentów nie będących reklamą oraz z 14411 ujęciami reklam.
+
+<<class, echo=FALSE, cache=TRUE>>=
+#load("Data//cnn.rda")
+load("Data//cnn.rda")
+summary(cnn$Class)
+@
+
+\noindent Do wykonania koniecznej analizy, dopasowania i oceny modeli podzieliłyśmy nasz zbiór (oczywiście losowo) na część treningową (2/3 obserwacji) i testową (1/3 obserwacji).\\
+
+\noindent Z kolei charakterystyki zmiennych objaśniających prezentują się następująco:
+
+
+<<char, echo=FALSE, cache=TRUE, fig.pos="H", tidy=TRUE>>=
+#load("Data//cnn.rda")
+load("Data//cnn.rda")
+frame <- apply(cnn[,-1], 2, function(x) 
+  c(Średnia = round(mean(x),2), "Odchylenie standardowe" = round(sd(x), 2), Mediana = round(median(x),2)))
+
+# knitr::xtable(frame, caption = "Podstawowe charakterystyki zmiennych objaśniających",             format = "latex")
+t1 <- xtable::xtable(frame[,1:10])
+t2 <- xtable::xtable(frame[,11:20])
+t3 <- xtable::xtable(frame[,21:30])
+t4 <- xtable::xtable(frame[,31:38])
+
+@
+{\centering
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrrrrrrr}
+  \hline
+ & V1 & V7 & V8 & V10 & V11 & V12 & V15 & V16 & V59 & V90 \\ 
+  \hline
+Średnia & 122.56 & 0.01 & 0.11 & 3608.56 & 1030.31 & 7080.92 & 1405.33 & 119.14 & 0.15 & 0.12 \\ 
+  Odchylenie standardowe & 287.20 & 0.00 & 0.03 & 238.41 & 342.85 & 395.97 & 688.86 & 18.93 & 0.06 & 0.17 \\ 
+  Mediana & 52.00 & 0.01 & 0.10 & 3640.01 & 1070.17 & 7135.34 & 1366.38 & 120.16 & 0.15 & 0.02 \\ 
+     \hline
+ & V91 & V99 & V100 & V101 & V104 & V105 & V106 & V114 & V127 & V129 \\ 
+  \hline
+Średnia & 0.14 & 0.15 & 0.19 & 0.12 & 0.34 & 0.06 & 0.06 & 0.07 & 0.00 & 0.00 \\ 
+  Odchylenie standardowe & 0.19 & 0.17 & 0.19 & 0.14 & 0.16 & 0.07 & 0.07 & 0.07 & 0.00 & 0.01 \\ 
+  Mediana & 0.02 & 0.07 & 0.13 & 0.06 & 0.36 & 0.03 & 0.03 & 0.06 & 0.00 & 0.00 \\ 
+   \hline
+ & V142 & V156 & V168 & V176 & V185 & V236 & V269 & V407 & V572 & V580 \\ 
+  \hline
+Średnia & 0.01 & 0.00 & 0.01 & 0.01 & 0.00 & 0.00 & 0.00 & 0.00 & 0.10 & 0.06 \\ 
+  Odchylenie standardowe & 0.03 & 0.01 & 0.02 & 0.02 & 0.01 & 0.00 & 0.00 & 0.00 & 0.11 & 0.10 \\ 
+  Mediana & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.06 & 0.01 \\ 
+   \hline
+ & V601 & V726 & V762 & V792 & V924 & V959 & V1002 & V1016 \\ 
+  \hline
+Śrbednia & 0.00 & 0.02 & 0.08 & 0.00 & 0.02 & 0.02 & 0.02 & 0.02 \\ 
+  Odchylenie standardowe & 0.00 & 0.03 & 0.11 & 0.01 & 0.04 & 0.05 & 0.04 & 0.06 \\ 
+  Mediana & 0.00 & 0.00 & 0.04 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 \\ 
+   \hline
+\end{tabular}
+\end{table}
+}
+
+\newpage
+
+\noindent Zanim przejdziemy do konstrukcji modeli przyjrzyjmy się jeszcze jakie są rozkłady zmiennych objaśniających w klasach. Głębszej analizie poddamy 2 zmienne: V7 i V12.
+
+\subsubsection*{Zmienna V7:}
+\noindent Wyestymowane (nieparametrycznie) gęstości zmiennej V7 w obu klasach:
+
+<<echo=FALSE>>=
+load("Data//cnn.rda")
+
+plot(density(cnn[cnn$Class == 0, 3]), col="grey", main = "V7", , xlab = "")
+legend("topright", col = c("red", "grey"), 
+       legend = c("Reklama", "TV News"), lty = 1)
+lines(density(cnn[cnn$Class == 1,3]), col="red", 
+      main = "V3", , xlab = "")
+@
+
+\noindent Jak widzimy rozkład zmiennej V7 w klasach różni się nieco. Gdy rozpatrujemy reklamy to mediana wartości tej zmiennej jest mniejsza niż w przypadku TV News. Zmienna V7 charakteryzuje rozrzut amplitudy dźwięku, zatem widzimy, że w przypadku reklam te wartości amplitudy są bardziej zbliżone do siebie (rozrzut jest mniejszy). Zauważmy też, że w obu przypadkach mamy do czynienia z rozkładem jednomodalnym, symetrycznym. Patrząc na wykres możemy przypuszcać, że wartości zmiennych są opisywane przez rozkład normalny. Przyjrzyjmy się rezultatom testu Shapiro Wilka:
+
+<<echo = FALSE, cache=TRUE>>=
+n1 <- length(cnn[cnn$Class == 1,3])
+n2 <- length(cnn[cnn$Class == 0,3])
+
+shapiro.test_reklama <- shapiro.test(cnn[cnn$Class == 1,3][sample(1:n1, 5000)])
+shapiro.test_tv_news <- shapiro.test(cnn[cnn$Class == 0,3][sample(1:n2, 5000)])
+@
+
+<<>>=
+shapiro.test_reklama
+shapiro.test_tv_news
+@
+
+Niestety w obu przypadkach formalny test odrzuca hipotezę o normalności rozkładów.
+
+\subsubsection*{Zmienna V12:}
+Wyestymowane wykresy gęstości:
+
+<<echo=FALSE>>=
+plot(density(cnn[cnn$Class == 0,7]), col="grey", main = "V12", , xlab = "")
+legend("topleft", col = c("red", "grey"), 
+       legend = c("Reklama", "TV News"), lty = 1)
+lines(density(cnn[cnn$Class == 1,7]), col="red", 
+      main = "V12", , xlab = "")
+@
+
+\noindent Również z tego wykresu możemy spostrzec, że rozkłady zmiennej V12 różnią się znacząco w obu grupach. Tutaj niestety nie mamy już do czynienia z rozkładem symetrycznym. Co może być ciekawe, to fakt, że obie te zmienne wykazują pewien trend, który okazuje się być podobny. Gęstości wyglądają na odrobine przesunięte i przeskalowane.
+
+
+\newpage
+
+\thispagestyle{empty}
+
+\topskip0pt
+\vspace*{\fill}
+\begin{center}
+\Huge{ 
+\textbf{WYBÓR MODELU} \\[0.5cm] }
+\end{center}
+\vspace*{\fill}
+
+\newpage 
+
+\section{Analiza dyskryminacyjna}
+
+\subsection{LDA}
+
+<<LDA, echo=FALSE>>=
+load("Modele//lda_model.rda")
+dokladnosc_LDA <- procent_lda_test
+czulosc_LDA <- czulosc_lda_test
+precyzja_LDA <- precyzja_lda_test
+
+ROC_LDA <- ROC_lda
+CAP_LDA <- CAP_lda
+LIFT_LDA <- LIFT_lda
+
+AUC_LDA <- AUC_lda
+
+error_LDA <- 1 - k_lda$procent
+@
+
+\noindent \subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+lda <- lda(Class~., data=Train)
+@
+
+\noindent Aby ocenić zdolność predykcyjną modelu wykorzystamy dane ze zbioru testowego:
+<<eval=FALSE>>=
+predykcja_lda <- predict(lda, newdata = Test)
+@
+
+\noindent Przyjrzyjmy się jak wygląda tabela klasyfikacji:
+
+<<echo=FALSE>>=
+tabela_lda_test
+@
+
+\noindent Jaki jest błąd klasyfikacji na tych danych?
+
+<<echo=FALSE>>=
+1 - procent_lda_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_LDA
+czulosc_LDA
+precyzja_LDA
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_LDA, main="Krzywa ROC - LDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+\noindent Wartość AUC:
+<<>>=
+AUC_LDA
+@
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_LDA, main="Krzywa CAP - LDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_LDA, main="Krzywa LIFT - LDA",col=2,lwd=2)
+
+@
+
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej}
+
+\noindent Powyższe wartości wakaźników i wykresy zostały wyznaczone za pomocą predykcji na ustalonym wcześniej przez nas zbiorze testowym. Aby móc rzetelnie ocenić model posłużymy się kroswalidacją 10-krotną. Wartość błędu predykcji na podstawie kroswalidacji:
+
+<<>>=
+error_LDA
+@
+
+\newpage 
+
+\subsection{QDA}
+
+<<QDA, echo=FALSE>>=
+load("Modele//qda_model.rda")
+
+dokladnosc_QDA <- procent_qda_test
+czulosc_QDA <- czulosc_qda_test
+precyzja_QDA <- precyzja_qda_test
+
+ROC_QDA <- ROC_qda
+CAP_QDA <- CAP_qda
+LIFT_QDA <- LIFT_qda
+
+AUC_QDA <- AUC_qda
+
+error_QDA <- 1-k_qda$procent
+@
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+qda <- qda(Class~., data=Train)
+@
+
+\noindent Aby ocenić wartość predykcyjną modelu wykorzystamy dane ze zbioru testowego:
+
+<<eval=FALSE>>=
+predykcja_qda <- predict(qda, newdata = Test)
+@
+
+\noindent Tabela klasyfikacji:
+
+<<echo=FALSE>>=
+tabela_qda_test
+@
+
+\noindent Błąd klasyfikacji:
+
+<<echo=FALSE>>=
+1 - procent_qda_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_QDA
+czulosc_QDA
+precyzja_QDA
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_QDA, main="Krzywa ROC - QDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+\noindent Wartość AUC:
+<<>>=
+AUC_QDA
+@
+
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_QDA, main="Krzywa CAP - QDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_QDA, main="Krzywa LIFT - QDA",col=2,lwd=2)
+
+@
+
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej}
+
+<<>>=
+error_QDA
+@
+
+\newpage 
+
+\section{Percepton}
+
+<<Percepton, echo=FALSE, cache=TRUE>>=
+load("Modele//model_perceptron.rda")
+
+dokladnosc_perceptron <- procent_p_test
+czulosc_perceptron <- czulosc_p_test
+precyzja_perceptron <- precyzja_p_test
+
+ROC_P <- ROC_p
+CAP_P <- CAP_p
+LIFT_P <- LIFT_p
+
+AUC_P <- AUC_p
+
+error_perceptron <- 1-procent_p_test
+@
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE, cache=TRUE>>=
+x <- Train[, -1]
+y <- 2*as.double(as.character(Train[,1]))-1
+perceptron <- perceptron(x, y, 0.5, 100, 0.01)
+@
+
+\noindent Oceńmy wartość predykcyjną modelu wykorzystując dane ze zbioru testowego:
+<<eval=FALSE, tidy = TRUE, cache=TRUE>>=
+nowyx <- Test[,-1]
+predykcja_perceptron <- (sign(model_perceptron[length(model_perceptron)] + as.matrix(nowyx)%*%model_perceptron[-length(model_perceptron)])+1)/2
+@
+
+\noindent Tabela klasyfikacji:
+<<echo=FALSE>>=
+tabela_p_test
+@
+
+\noindent Błąd klasyfikacji:
+<<echo=FALSE>>=
+1 - procent_p_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_perceptron
+czulosc_perceptron
+precyzja_perceptron
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_P, main="Krzywa ROC - PERCEPTRON",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+\noindent Wartość AUC również ocenia dopasowanie modelu do danych:
+
+<<>>=
+AUC_P
+@
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_P, main="Krzywa CAP - LDA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_P, main="Krzywa LIFT - LDA",col=2,lwd=2)
+
+@
+
+
+\noindent Niestety z powodów technicznych i ograniczeń sprzętowych nie byłyśmy w stanie przeprowadzić kroswalidacji 10-krotnej dla perceptronu.
+
+\newpage
+\section{Model logistyczny z regularyzacją}
+
+<<REG, echo=FALSE, message=FALSE, cache=TRUE>>=
+load("Modele//regularyzowany_model.rda")
+
+dokladnosc_REG <- procent_reg1_test
+czulosc_REG <- czulosc_reg1_test
+precyzja_REG <- precyzja_reg1_test
+
+ROC_REG <- ROC_reg
+CAP_REG <- CAP_reg
+LIFT_REG <- LIFT_reg
+
+AUC_REG <- AUC_reg
+
+error_REG <- 1 - k_reg$procent
+@
+
+\subsubsection*{Dopasowanie modelu (ogólnie)}
+
+<<eval=FALSE, cache=TRUE>>=
+x <- as.matrix(Train[,-1])
+y <- Train[,1]
+
+regularyzacja <- glmnet(x, y,  family = "binomial", alpha = 1)
+@
+
+\subsubsection*{Wyznaczenie parametru $\lambda$}
+
+\noindent Najpierw zobaczmy jakkie wartości przyjmują współczynniki przy zmiennych w zależności od parametru $\lambda$. Przyjrzyjmy się wykresowi zależności wartości współczynników od $log(\lambda)$:
+
+<<wykres_reg, cache=TRUE, fig=TRUE, echo=FALSE>>=
+load("Modele//regularyzowany_model.rda")
+plot(model_reg_train, xvar="lambda")
+@
+
+\noindent Widzimy, że tak naprawdę jedna z tych zmiennych dominuje pozostałe. Jest to zmienna V7 (reprezentując wariancję wskaźnika Short Time Energy). Zastosujemy też funkcję \texttt{matplot()}, żeby zobaczyć jak wartości współczynników zmieniają się z każdym krokiem wraz ze wzrostem $\lambda$
+
+<<wykres_reg2, cache=TRUE, fig=TRUE, echo=FALSE>>=
+load("Modele//regularyzowany_model.rda")
+nsteps <- 10
+b1 <- coef(model_reg_train)[-1, 1:nsteps]
+w <- glmnet::nonzeroCoef(b1)
+b1 <- as.matrix(b1[w, ])
+
+matplot(1:nsteps, t(b1), type = "o", pch = 19, col = "blue", xlab = "Step", ylab = "Coefficients", lty = 1, main="")
+title("Lasso")
+abline(h = 0, lty = 2)
+@
+
+\noindent Aby dopasować jak najlepszy model posłużymy się metodą kroswalidacji. Na tej podstawie wyznaczymy parametr $\lambda$, dla którego wartość błędu predykcji jest najmniejsza:
+
+<<eval=FALSE>>=
+cv1 = cv.glmnet(x,y,family="binomial",alpha=1)
+
+regularyzacja_min <- glmnet(x, y,  family = "binomial", alpha = 1, lambda=cv1$lambda.min)
+@
+
+\noindent Predykcja na podstawie danych ze zbioru testowego:
+
+<<eval=FALSE>>=
+x2 <- as.matrix(Test[,-1])
+y <- Test[,1]
+predykcja_regularyzacja <- predict(regularyzacja_min, newx=x2, type="response")
+@
+
+\noindent Tabela klasyfikacji:
+
+<<echo=FALSE>>=
+tabela_reg1_test
+@
+
+\noindent Błąd klasyfikacji:
+
+<<echo=FALSE>>=
+1 - procent_reg1_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_REG
+czulosc_REG
+precyzja_REG
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_REG, main="Krzywa ROC - REGULARYZACJA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+\noindent Wartość AUC:
+<<>>=
+AUC_REG
+@
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_REG, main="Krzywa CAP - REGULARYZACJA",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_REG, main="Krzywa LIFT - REGULARYZACJA",col=2,lwd=2)
+
+@
+
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej:}
+
+<<>>=
+error_REG
+@
+
+\newpage
+\section{Regresja logistyczna}
+
+<<LOGIT, echo=FALSE, cache=TRUE>>=
+load("Modele//logistyczny_model.rda")
+
+#tabela_log_test
+
+dokladnosc_LOG <- procent_log_test
+czulosc_LOG <- czulosc_log_test
+precyzja_LOG <- precyzja_log_test
+
+ROC_LOG <- ROC_log
+CAP_LOG <- CAP_log
+LIFT_LOG <- LIFT_log
+
+AUC_LOG <- AUC_log
+
+error_LOG <- 1-k_log$procent
+@
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+log <- glm(Class~., data=Train, family="binomial")
+@
+
+\noindent Oceńmy predykcyjną modelu wykorzystując dane ze zbioru testowego:
+
+<<eval=FALSE>>=
+predykcja_log <- predict(log, newdata = Test, type="response")
+predykcja_log <- ifelse(predykcja_log>=0.5, 1,0)
+@
+
+\noindent Tabela klasyfikacji:
+
+<<echo=FALSE>>=
+tabela_log_test
+@
+
+\noindent Błąd klasyfikacji:
+
+<<echo=FALSE>>=
+1 - procent_log_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_LOG
+czulosc_LOG
+precyzja_LOG
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_LOG, main="Krzywa ROC - MODEL LOGISTYCZNY",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+\noindent Wskaźnik AUC:
+<<>>=
+AUC_LOG
+@
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_LOG, main="Krzywa CAP - MODEL LOGISTYCZNY",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_LOG, main="Krzywa LIFT - MODEL LOGISTYCZNY",col=2,lwd=2)
+
+@
+
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej:}
+<<>>=
+error_LOG
+@
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Naiwny Bayes
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage 
+
+\section{Naiwny Klasyfikator Bayesa}
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+nb <- NaiveBayes(Class ~ ., data = Train, prior = TRUE)
+@
+
+<<naiveBayes, cache=TRUE, echo=FALSE, warning=FALSE>>=
+load("Data//Train.rda")
+load("Data//Test.rda")
+
+# TrainNB <- Train
+# TrainNB$Class <- as.factor(TrainNB$Class)
+# 
+# TestNB <- Test
+# TestNB$Class <- as.factor(TestNB$Class)
+
+#nb <- NaiveBayes(Class ~ ., data = Train, prior = TRUE)
+#load("Raport//Data//nb.rda")
+
+load("Data//nb.rda")
+
+Probs <- predict(nb, newdata = Test)
+pred_test <- Probs$class
+Probs <- Probs$posterior[,2]
+Labels <-  Test$Class
+
+# Predykcja na zbiorze testowym
+(tab <- table(Test$Class, pred_test, dnn = c("Observed Class", "Predicted Class")))
+
+dokladnosc_NaiveBayes <- dokladnosc(tab)
+czulosc_NaiveBayes <- czulosc(tab)
+precyzja_NaiveBayes <- precyzja(tab)
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_NaiveBayes
+czulosc_NaiveBayes
+precyzja_NaiveBayes
+@
+
+Wyniki są całkiem poprawne, wszystkie powyżej 80\%.
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<NaiveBayes_adekwatnosc1, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+#predykcja
+NaiveBayes <- prediction(Probs, Labels)
+
+# ROC
+ROC_NaiveBayes <- performance(NaiveBayes,"tpr", "fpr")
+plot(ROC_NaiveBayes, main="Krzywa ROC - NAIWNY BAYES",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+# AUC
+AUC_NaiveBayes <- auc(NaiveBayes)
+@
+
+\noindent Wskaźnik AUC:
+<<>>=
+AUC_NaiveBayes
+@
+
+<<NaiveBayes_adekwatnosc2, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+# CAP 
+CAP_NaiveBayes <- performance(NaiveBayes, "tpr", "rpp")
+plot(CAP_NaiveBayes, main="Krzywa CAP - NAIWNY BAYES",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+LIFT_NaiveBayes <- performance(NaiveBayes, "lift", "rpp")
+plot(LIFT_NaiveBayes, main="Krzywa LIFT - NAIWNY BAYES",col=2,lwd=2)
+
+@
+
+
+<<NaiveBayes_CV, echo=FALSE, eval=FALSE>>=
+load("Data//cnn.rda")
+library(ipred)
+
+mypredict <- function(object, newdata)
+  predict(object, newdata = newdata)$class
+
+mymodel <- function(formula, data) {
+ NaiveBayes(formula, data = data)
+}
+
+err <- errorest(Class ~ ., data=cnn, model = mymodel, estimator = "cv", 
+                predict= mypredict)
+err$error
+@
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej:}
+
+<<echo=FALSE>>=
+load("Data//error_NaiveBayes.rda")
+error_NaiveBayes <- error_NaiveBayes
+@
+
+<<>>=
+error_NaiveBayes
+@
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Metoda k-nn
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage
+
+\section{Metoda K-NN}
+
+\subsection*{Wybór parametru $k$}
+
+Aby zbudować klasyfikator na próbie uczącej potrzebujemy wybrać parametr $k$ - liczba najbliższych sąsiadów, tzn. nową obserwację klasyfikujemy do populacji, która stanowi większość wśród $k$ najbliższych sąsiadów tegoż punktu. Wybór optymalnej wartości $k$ dokonamy na podstawie wartości błędu klasyfikacji - wybierzmy $k$ dla którego błąd będzie najmniejszy. 
+
+
+ <<eval=FALSE, tidy = TRUE>>=
+K <- tune.knn(Train[,-1], as.factor(Train[,1]), 
+              k = c(1:10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100))
+plot(K)
+@
+
+<<KNNk, echo = FALSE, warning=FALSE>>=
+load("Data//Train.rda")
+# wybór k sąsiadów:
+# K <- tune.knn(Train[,-1], as.factor(Train[,1]), k = c(1:10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100))
+# 
+# save(K, file = "Raport//Data//knnK.rda")
+
+load("Data//knnK.rda")
+
+plot(K$performances$k, K$performances$error, type = "b", ylab = "Błąd klasyfikacji", xlab = "Liczba sąsiadów")
+@
+
+<<>>=
+K$best.parameters
+@
+
+Na podstawie powyższej ryciny, najmniejszy błąd predykcji jest osiągany dla wartości k równej 15 i taką wartość przyjmujemy jako najlepszą liczbę sąsiadów w dalszej analizie.
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+KNN <- knn(Train, Test, cl = as.factor(Train), k = 15, prob = TRUE)
+@
+
+
+<<KNN, echo = FALSE, warning=FALSE>>=
+load("Data//Train.rda")
+load("Data//Test.rda")
+
+#KNN <- knn(Train, Test, cl = as.factor(Train$Class), k = 200, prob = TRUE)
+#save(KNN, file = "Raport//Data//KNN.rda")
+load("Data//KNN.rda")
+
+Probs <- attr(KNN, which = "prob")
+Labels <-  Test$Class
+ 
+# Predykcja na zbiorze testowym
+(tab <- table(Test$Class, KNN,  dnn = c("Observed Class", "Predicted Class")))
+ 
+dokladnosc_KNN <- dokladnosc(tab)
+czulosc_KNN <- czulosc(tab)
+precyzja_KNN <- precyzja(tab) 
+@
+
+\subsubsection*{Dokładność, czułość, precyzja oraz AUC}
+
+<<>>=
+dokladnosc_KNN
+czulosc_KNN
+precyzja_KNN
+@
+
+Pomimo wysokiem czułości, słabe wyniki dla dokładności i precyzji w porównaniu do pozostałych klasyfikatorów.
+
+
+<<KNN_adekwatnosc, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# predykcja
+Knn <- prediction(Probs, Labels)
+
+# ROC
+ROC_KNN <- performance(Knn,"tpr", "fpr")
+plot(ROC_KNN, main="Krzywa ROC - k-nn",col=2,lwd=2)
+abline(a=0, b=1, lwd=2,  lty=2,col="gray")
+# AUC
+AUC_KNN <- auc(Knn)
+@
+
+\noindent Wskaźnik AUC:
+<<>>=
+AUC_KNN
+@
+
+Najniższa wartość jak do tej pory!
+
+<<KNN_adekwatnosc2, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+CAP_KNN <- performance(Knn, "tpr", "rpp")
+plot(CAP_KNN, main="Krzywa CAP - KNN",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+LIFT_KNN <- performance(Knn, "lift", "rpp")
+plot(LIFT_KNN, main="Krzywa LIFT - k-nn",col=2,lwd=2)
+
+@
+
+\subsection*{Błąd klasyfikacji kroswalidacji 10 - krotnej:}
+
+ <<KNN_CV, echo=FALSE, eval=FALSE>>=
+load("Data//cnn.rda")
+library(ipred)
+
+mypredict <- function(object, newdata) object
+
+mymodel <- function(data, formula) {
+ knn(data, setdiff(cnn, data), cl = as.factor(data$Class), k = 15, prob = TRUE)
+}
+
+err <- errorest(Class~., data=cnn, 
+                model=mymodel, 
+                estimator = "cv", predict= mypredict)
+
+error_KNN <- err$error
+save(error_KNN, file = "Raport//Data//error_KNN.rda")
+
+@
+
+<<echo=FALSE>>=
+load("Data//error_KNN.rda")
+error_KNN <- error_KNN
+@
+
+<<>>=
+error_KNN
+@
+
+
+\newpage
+\section{Drzewa decyzyjne}
+
+\subsubsection*{Wyznaczenie nieznanych parametrów}
+
+\noindent Dopasowanie drzewa odbywa się następująco: najpierw wyznaczam optymalną wartość minsplit (taką wartosć minsplit, która minimalizuje błąd klasyfikacji). Wartość minsplit wybieram dla ciągu od 50 do 1000 z krokiem 1000. Powodem tak dużej liczby minsplit jest bardzo duża liczba obserwacji. 
+<<eval=FALSE>>=
+audit_rpart <- tune.rpart(Class~., data=Train, minsplit=seq(50,1000,50))
+@
+
+
+<<TREE, echo=FALSE>>=
+load("Modele//drzewo.rda")
+
+#tabela_tree_test
+
+dokladnosc_TREE <- procent_tree_test
+czulosc_TREE <- czulosc_tree_test
+precyzja_TREE<- precyzja_tree_test
+
+ROC_TREE <- ROC_tree
+CAP_TREE <- CAP_tree
+LIFT_TREE <- LIFT_tree
+
+AUC_TREE <- AUC_tree
+
+error_TREE <- 1 - k_tree$procent
+@
+
+\noindent Przyjrzyjmy się wykresowi zależności błędu predykcji od minsplit:
+
+<<drzewo_wykres1, fig=TRUE>>=
+load("Modele//drzewo.rda")
+plot(audit_rpart, main="")
+@
+
+\noindent Minimalna wartość błędu jest dla minsplit przyjmującego wartość 450.\\
+\\
+\noindent Teraz zobaczmy jak wartość błędu zależy od parametru cp. Dopasujmy najpierw drzewo pełne:
+
+<<eval=FALSE>>=
+drzewo_pelne <- rpart(Class~., data=Train, cp=0, minsplit=minsplit)
+@
+
+\noindent Po dopasowaniu modelu drzewa pełnego do naszych danych dla minsplit=450, wykres zależności błędu od cp wygląda nastepująco:
+
+<<drzewo_wykres2, fig=TRUE, echo=FALSE>>=
+load("Modele//drzewo.rda")
+plotcp(model_drzewo_pelne_train)
+@
+
+\noindent Do wyboru optymalnej wartości cp posłużymy się regułą 1SE. Okazuje się, że jest to wartość cp=0.0065. Ucinamy nasze drzewo stosując wartość tego parametru:
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+load("Modele//drzewo.rda")
+model_tree_train <- prune.rpart(model_drzewo_train,cp=0.0065)
+@
+
+
+\noindent Ostatecznie nasze drzewo prezentuje się następująco:
+
+<<drzewo_wykres3, fig=TRUE>>=
+load("Modele//drzewo.rda")
+rpart.plot(model_tree_train)
+@
+
+\noindent Oceńmy wartość predykcyjną modelu wykorzystując dane ze zbioru testowego:
+
+<<eval=FALSE>>=
+predykcja_tree <- predict(model_tree_train, newdata = Test, type="class")
+@
+
+\noindent Tabela klasyfikacji:
+
+<<echo=FALSE>>=
+tabela_tree_test
+@
+
+\noindent Błąd klasyfikacji:
+
+<<echo=FALSE>>=
+1 - procent_tree_test
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_TREE
+czulosc_TREE
+precyzja_TREE
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+plot(ROC_TREE, main="Krzywa ROC - DRZEWO DECYZYJNE",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+@
+
+
+\noindent Wartość AUC:
+<<>>=
+AUC_TREE
+@
+
+
+<<echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+plot(CAP_TREE, main="Krzywa CAP - DRZEWO DECYZYJNE",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+plot(LIFT_TREE, main="Krzywa LIFT - DRZEWO DECYZYJNE",col=2,lwd=2)
+
+@
+
+\subsubsection*{Błąd klasyfikacji kroswalidacji 10 - krotnej:}
+
+<<>>=
+error_TREE
+@
+
+\newpage
+
+\section{Metody łączenia drzew}
+
+\subsection{Bagging}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Bagging
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+<<bagging-fun, echo=FALSE, eval=FALSE>>=
+library(rpart)
+bagging <- function(B, train, test){
+
+  # liczba obserwacji w zbiorze treningowym
+  nr_train <- nrow(train)
+  
+  pred <- lapply(1:B, function(i){
+    jakie <- sample(1:nr_train, replace = TRUE)
+    train_new <- train[jakie,]
+    tree <- rpart(Class ~ ., data = train_new, )
+    round(predict(tree, newdata = test)[,2], 0)
+  })
+  bycol <- mapply("+", pred)
+  suma <- apply(bycol, 1, sum)
+  
+  # przynaleznosc do klasy:
+  pred <- ifelse(suma >= B/2, 1, 0)
+  
+  tab <- table(test$Class, pred, dnn = c("Observed Class", "Predicted Class"))
+  
+  return(confusion = tab)
+}
+@
+
+\subsubsection*{Dopasowanie modelu}
+
+<<eval=FALSE>>=
+bag <- bagging(Class ~ ., data=Train,  nbagg = 25)
+@
+
+\noindent Parametr \texttt{nbagg} oznacza liczbę prób bootstrapowych. Z powodu ograniczeń sprzętowych liczbę tą ograniczyłyśmy do 25. Natomiast drzewa budujemy bez przycinania, zatem pozostawiłyśmy defaultowe wartości charaterstyk potrzebnych do  budowy drzew.
+
+<<Bagging, cache=TRUE, echo = FALSE>>=
+load("Data//Train.rda")
+load("Data//Test.rda")
+
+# bag <- bagging(Class ~ ., data=Train,  nbagg = 25)
+# 
+# save(bag, file = "Raport//Data//bagging.rda")
+
+#load("Data//bagging.rda")
+
+load("Data//Probs_bagging.rda")
+#Probs <- predict(bag, newdata=Test, type = "prob")
+Probs <- Probs
+Labels <-  Test$Class
+
+# Predykcja na zbiorze testowym
+load("Data//pred_test_bagging.rda")
+pred_test <- pred_test
+#pred_test <- predict(bag, newdata=Test)
+
+Bagging  <- prediction(Probs[,2], Labels)
+
+(tab <- table(Test$Class, pred_test, dnn = c("Observed Class", "Predicted Class")))
+
+dokladnosc_Bagging <- dokladnosc(tab)
+czulosc_Bagging  <- czulosc(tab)
+precyzja_Bagging  <- precyzja(tab)
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_Bagging 
+czulosc_Bagging 
+precyzja_Bagging 
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<Bagging_adekwatnosc, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+#predykcja
+#Bagging  <- prediction(Probs, Labels)
+# ROC
+ROC_Bagging  <- performance(Bagging ,"tpr", "fpr")
+plot(ROC_Bagging, main="Krzywa ROC - BAGGING",col=2,lwd=2)
+abline(a=0, b=1, lwd=2,  lty=2,col="gray")
+
+# AUC
+AUC_Bagging  <- auc(Bagging)
+
+@
+
+
+\noindent Wartość AUC:
+<<>>=
+AUC_Bagging 
+@
+
+<<Bagging_adekwatnosc2, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+CAP_Bagging <- performance(Bagging, "tpr", "rpp")
+plot(CAP_Bagging, main="Krzywa CAP - BAGGING",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+LIFT_Bagging  <- performance(Bagging , "lift", "rpp")
+plot(LIFT_Bagging, main="Krzywa LIFT - BAGGING",col=2,lwd=2)
+@
+
+Widzimy, że metoda sprawuje się bardzo dobrze! 
+
+<<Bagging_CV, echo=FALSE, eval=FALSE>>=
+load("Data//cnn.rda")
+library(ipred)
+
+err <- errorest(Class ~ ., data = cnn, model=bagging, estimator = "cv", predict= predict)
+error_Bagging <- err$error
+
+save(error_Bagging, file = "Raport//Data//error_Bagging.rda")
+
+err
+@
+
+<<echo=FALSE>>=
+load("Data//error_Bagging.rda")
+error_Bagging <- error_Bagging
+@
+
+\subsubsection*{Błąd predykcji krowalidacji 10-krotnej:}
+
+<<>>=
+error_Bagging
+@
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%% LASY LOSOWE
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage 
+
+\subsection{Lasy losowe}
+
+\subsubsection*{Dopasowanie modelu}
+
+Drzewa są budowane bez przycinania, natomiast parametr $m = \sqrt{p}$, gdzie $p$ to liczba zmiennych objaśniających.
+
+
+<<eval = FALSE, tidy = TRUE>>=
+rf <- randomForest(Class ~ ., data=Train, test= Test)
+@
+
+
+<<randomForest, cache=TRUE, echo = FALSE>>=
+load("Data//Train.rda")
+load("Data//Test.rda")
+
+#rf <- randomForest(Class ~ ., data=Train, 
+#                   keep.forest=TRUE, importance=TRUE, test= Test)
+
+#save(rf, file = "Data//rf.rda")
+
+load("Data//rf.rda")
+
+Probs <- predict(rf, newdata=Test, type = "prob")[,2]
+Labels <-  Test$Class
+
+# Predykcja na zbiorze testowym
+pred_test <- predict(rf, newdata=Test)
+(tab <- table(Test$Class, pred_test, dnn = c("Observed Class", "Predicted Class")))
+
+dokladnosc_RandomForest <- dokladnosc(tab)
+czulosc_RandomForest <- czulosc(tab)
+precyzja_RandomForest <- precyzja(tab)
+@
+
+\subsubsection*{Dokładność, czułość, precyzja}
+
+<<>>=
+dokladnosc_RandomForest
+czulosc_RandomForest
+precyzja_RandomForest
+@
+
+\subsubsection*{Krzywe ROC, CAP oraz LIFT}
+
+<<RandomForest_adekwatnosc, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+#predykcja
+RandomForest <- prediction(Probs, Labels)
+
+# ROC
+ROC_RandomForest <- performance(RandomForest,"tpr", "fpr")
+plot(ROC_RandomForest, main="Krzywa ROC - LASY LOSOWE",col=2,lwd=2)
+abline(a=0, b=1, lwd=2,  lty=2,col="gray")
+
+# AUC
+AUC_RandomForest <- auc(RandomForest)
+@
+
+
+\noindent Wartość AUC:
+<<>>=
+AUC_RandomForest
+@
+
+Wartość AUC bliska 1!
+
+<<RandomForest_adekwatnosc2, echo=FALSE, dpi=144, fig.height=5, fig.width=10>>=
+
+# CAP 
+CAP_RandomForest <- performance(RandomForest, "tpr", "rpp")
+plot(CAP_RandomForest, main="Krzywa CAP - RANDOM FOREST",col=2, lwd=2)
+abline(a=0, b=1, lwd=2, lty=2, col="gray")
+
+#LIFT
+LIFT_RandomForest <- performance(RandomForest, "lift", "rpp")
+plot(LIFT_RandomForest, main="Krzywa LIFT - LASY LOSOWE",col=2,lwd=2)
+
+@
+
+<<eval=FALSE, tidy=TRUE, echo=FALSE>>=
+error_RandomForest <- errorest(Class ~ ., data=bbc_cnn, model = randomForest, estimator = "cv", predict= predict)
+@
+
+<<randomForest_CV, echo=FALSE>>=
+load("Data//error_RandomForest.rda")
+error_RandomForest <- error_RandomForest
+@
+
+\subsubsection*{Błąd predykcji kroswalidacji 10-krotnej}
+
+<<>>=
+error_RandomForest
+@
+
+\subsubsection*{Ranking zmiennych objaśnianych}
+
+\noindent Lasy losowe pozwalają nam również na utworzenie rankingu zmiennych, sprawdźmy jak wygląda to w naszym przypadku (ranking ze względu na dokładność klasyfikacji):
+
+
+<<echo=FALSE>>=
+varImpPlot(rf, type = 1, main = "Ranking zmiennych")
+@
+
+\noindent Widzimy, że najbardziej istotne zmienne są związane z wskaźnikiem \emph{Text Area Distribution} -  związanym z rozkładem tekstu w shocie, czy z \emph{Short Time Energy} - zmienna V7 - zmienną bliżej omówiłyśmy w rozdziałe 1.
+
+
+\newpage
+
+\thispagestyle{empty}
+
+\topskip0pt
+\vspace*{\fill}
+\begin{center}
+\Huge{ 
+\textbf{OCENA JAKOŚCI \\[.8cm] KLASYFIKATORÓW} \\[0.5cm] }
+\end{center}
+\vspace*{\fill}
+
+\newpage 
+
+\section{Ocena jakości klasyfikatorów}
+
+\subsection{Krzywa ROC}
+
+Na poniższej rycinie znajdują się krzywe ROC dla każdego z wcześniej przeprowadzonej klasyfikacji opartej na zadanym zbiorze treningowym i testowym.
+
+<<ROC, echo=FALSE, cache=TRUE>>=
+# ROC
+plot(ROC_RandomForest, main="Krzywa ROC", col= 1, lwd=1.5)
+plot(ROC_Bagging, col= 2, lwd=1.5,  add = T)
+plot(ROC_TREE, col= 3, lwd=1.5,  add = T)
+plot(ROC_KNN, col= 4, lwd=1.5,  add = T)
+plot(ROC_NaiveBayes, col= 5, lwd=1.5,   add = T)
+plot(ROC_LOG, col= 6, lwd=1.5,  add = T)
+plot(ROC_REG, col= 7, lwd=1.5,   add = T)
+plot(ROC_P, col= 8, lwd=1.5, add = T)
+plot(ROC_QDA, col= 9, lwd=1.5,   add = T)
+plot(ROC_LDA, col= 10, lwd=1.5,   add = T)
+
+abline(a=0, b=1, lwd=2,  lty=2, col="gray")
+legend("bottomright", col = 10:1, 
+         legend = rev(c("Lasy losowe", "Bagging", "Drzewa decyzyjne", 
+                    "k-NN", "Naiwny Bayes", "Regresja logistyczna", 
+                    "Regularyzowana RLog", "Perceptron" ,"QDA", "LDA")), lty = 1)
+@
+
+Widać, że klasyfikotor zbudowany dla podstawie lasów losowych i metody bagging dają najlepsze wyniki - wartości AUC są bliskie 1. Inne klasyfikatory również sprawują się dobrze. Ale są również klasyfikatory, które sprawują fatalnie - perceptron i k-NN.
+
+\newpage
+
+\subsection{Krzywa CAP}
+
+<<CAP, echo=FALSE>>=
+# CAP 
+plot(CAP_RandomForest, main="Krzywa CAP", col= 1, lwd=1.5)
+plot(CAP_Bagging, col= 2, lwd=1.5,  add = T)
+plot(CAP_TREE, col= 3, lwd=1.5,  add = T)
+plot(CAP_KNN, col= 4, lwd=1.5,  add = T)
+plot(CAP_NaiveBayes, col= 5, lwd=1.5,  add = T)
+plot(CAP_LOG, col= 6, lwd=1.5,  add = T)
+plot(CAP_REG, col= 7, lwd=1.5,  add = T)
+plot(CAP_P, col= 8, lwd=1.5,  add = T)
+plot(CAP_QDA, col= 9, lwd=1.5,  add = T)
+plot(CAP_LDA, col= 10, lwd=1.5,  add = T)
+
+abline(a=0, b=1, lwd=2,  lty=2, col="gray")
+legend("bottomright", col = 10:1, 
+         legend = rev(c("Lasy losowe", "Bagging", "Drzewa decyzyjne", 
+                    "k-NN", "Naiwny Bayes", "Regresja logistyczna", 
+                    "Regularyzowana RLog", "Perceptron" ,"QDA", "LDA")), lty = 1)
+@
+
+Wyniki z krzywych ROC przenoszą się również dla krzywych CAP. Znów najlepszymi klasyfikatorami okazały się lasy losowe i bagging, zaś najsłabszymi perceptron i $k$-nn.
+
+\newpage
+
+\subsection{Krzywa LIFT}
+
+<<LIFT, echo=FALSE>>=
+#LIFT
+plot(LIFT_RandomForest, main="Krzywa LIFT", col= 1, lwd=1.5)
+plot(LIFT_Bagging, col= 2, lwd=1.5, add = T)
+plot(LIFT_TREE, col= 3, lwd=1.5,  add = T)
+plot(LIFT_KNN, col= 4, lwd=1.5,  add = T)
+plot(LIFT_NaiveBayes, col= 5, lwd=1.5,  add = T)
+plot(LIFT_LOG, col= 6, lwd=1.5,  add = T)
+plot(LIFT_REG, col= 7, lwd=1.5,  add = T)
+plot(LIFT_P, col = 8, lwd = 1.5,  add = T)
+plot(LIFT_QDA, col= 9, lwd=1.5,  add = T)
+plot(LIFT_LDA, col= 10, lwd=1.5,  add = T)
+
+abline(a=0, b=1, lwd=2,  lty=2,col="gray")
+
+legend("bottomleft", col = 10:1, 
+legend = rev(c("Lasy losowe", "Bagging", "Drzewa decyzyjne", 
+                    "k-NN", "Naiwny Bayes", "Regresja logistyczna", 
+                    "Regularyzowana RLog", "Perceptron" ,"QDA", "LDA")), lty = 1)
+@
+
+\subsection{Podsumowanie charakterystyk dopasowania}
+
+<<WYNIKI, echo=FALSE>>=
+dokladnosc <- c(dokladnosc_LDA, dokladnosc_QDA, dokladnosc_perceptron, dokladnosc_REG, dokladnosc_LOG, 
+dokladnosc_NaiveBayes, dokladnosc_KNN, dokladnosc_TREE, dokladnosc_Bagging, 
+dokladnosc_RandomForest)
+
+dokladnosc <- round(dokladnosc, 2)
+
+czulosc <- c(czulosc_LDA, czulosc_QDA, czulosc_perceptron, czulosc_REG, czulosc_LOG, 
+czulosc_NaiveBayes, czulosc_KNN, czulosc_TREE, czulosc_Bagging, 
+czulosc_RandomForest)
+
+czulosc <- round(czulosc, 2)
+
+precyzja <- c(precyzja_LDA, precyzja_QDA, precyzja_perceptron, precyzja_REG, precyzja_LOG, 
+precyzja_NaiveBayes, precyzja_KNN, precyzja_TREE, precyzja_Bagging, 
+precyzja_RandomForest)
+
+precyzja <- round(precyzja, 2)
+
+auc <- c(AUC_LDA, AUC_QDA, AUC_P, AUC_REG, AUC_LOG, 
+AUC_NaiveBayes, AUC_KNN, AUC_TREE, AUC_Bagging, 
+AUC_RandomForest)
+
+auc <- round(auc, 2)
+
+error <- c(error_LDA, error_QDA, 0, error_REG, error_LOG, 
+error_NaiveBayes, error_KNN, error_TREE, error_Bagging, 
+error_RandomForest)
+
+error <- round(error, 2)
+
+error[3] <- "-"
+
+names <- rev(c("Lasy losowe", "Bagging", "Drzewa decyzyjne", 
+                    "k-NN", "Naiwny Bayes", "Regresja logistyczna", 
+                    "Regularyzowana RLog", "Perceptron" ,"QDA", "LDA"))
+
+res <- cbind(" " = names, Dokładność = dokladnosc,
+             Czułość = czulosc, Precyzja = precyzja, AUC = auc, 
+             "Błąd kroswalidacji" = error)
+
+@
+
+{\centering
+<<echo=FALSE>>=
+knitr::kable(res, align = "c")
+@
+}
+
+\newpage
+
+\subsection{Wnioski}
+
+\noindent Dokonując konstrukcji klasyfikatorów przyjęłyśmy, że bardziej interesuje nas identyfikacja reklamy. Dane zostały zgromadzone głownie na potrzeby firm, których produkty były promowane w telewizji. Takie firmy mogą być zainteresowane zarówno kontrolą nadawania reklam dotyczących ich wyrobów, jak też badaniem posunięć konkurencji.\\
+
+\noindent W celu wyboru najlepszej metody klasyfikacji przeanalizowałyśmy dokładnie 10 różnych klasyfikatorów i dokonałyśmy ich oceny na podstawie błędów klasyfikacji i innych wskaźników, opisujących stopień dopasowania do danych i efekt predykcyjny. \\ 
+
+\noindent Co się okazuje? Najlepszym klasyfikatorem są \textbf{lasy losowe}. Klasyfikator ten \"wygrał\" w prawie każdej kategorii, charakteryzuje się zarówno wysokim odsetkiem poprawnej klasyfikacji, jak i precyzją, czy czułością. Nie jest to wielkim zaskoczeniem, gdyż ten klasyfikator jest oparty na tzw. komitetach drzew a i nasz rezultat jest uśredniony. Modele oparte na tzw. \emph{collective wisdom} cechują się wysoką efektywnością.\\
+
+\noindent Należy nadmienić, że nie tylko lasy losowe dają bardzo dobre wyniki. Powyższa tabelka wskazuje również na klasyfikator zbudowany metodą bagging (wyniki niewiele gorsze niż lasy losowe). Widać również przewagę metody opartej na komitetach drzew nad metodą opartą na pojedyńczym drzewie. Drzewo decyzyjne jest jednym z najsłabszych klasyfikatów, które otrzymaliśmy. \\
+
+\noindent Klasyfikatorem, który zdecydowanie nie sprawdza w klasyfikacji reklamy jest perceptron. Procent poprawnych klasyfikacji jest tylko na poziomie 70\%, natomiast wykres krzywej CAP sugeruje nam, że ten klasyfikator jest niewiele lepszy od modelu losowego. Również niewielka wartość wskaźnika AUC (0.6) mówi nam, że mamy do czynienia ze stosunkowo słabym klasyfikatorem, pomimo czułości na poziomie 99\%.
+Kolejnym klasyfikatorem, które również nie sprawuję się dobrze na naszych danych jest $k$ najbliższych sąsiadów (u nas 15). Dla tego klasyfikatora odnotowałyśmy najmniejszą wartość AUC oraz największy błąd kroswalidacji. 
+
+\end{document}
